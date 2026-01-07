@@ -1,6 +1,6 @@
 // src/App.tsx
 import React, { useState, useEffect } from 'react';
-import { Home, Calendar, User as UserIcon, MapPin, PlusCircle, CheckCircle, AlertCircle, LogOut, Trophy, BarChart3 } from 'lucide-react';
+import { Home, Calendar, User as UserIcon, MapPin, PlusCircle, CheckCircle, AlertCircle, LogOut, Trophy, Crown } from 'lucide-react';
 
 // Bileşenleri İçe Aktarma
 import { Header, NavButton } from './components/UI';
@@ -9,8 +9,8 @@ import AddToolForm from './pages/AddToolForm';
 import Reservations from './pages/Reservations';
 import UserProfile from './pages/UserProfile';
 import Leaderboard from './pages/Leaderboard';
-import Statistics from './pages/Statistics';
 import AuthPage from './pages/AuthPage';
+import AdminDashboard from './pages/AdminDashboard';
 
 // Hook ve API'leri İçe Aktarma
 import { useTools } from './hooks/useTools';
@@ -24,7 +24,7 @@ import {
 } from './services/api';
 
 // Sekme isimleri için bir tip tanımlıyoruz
-type Tab = 'home' | 'reservations' | 'add' | 'leaderboard' | 'profile' | 'statistics';
+type Tab = 'home' | 'reservations' | 'add' | 'leaderboard' | 'profile' | 'admin';
 
 // Bildirim yapısı için interface
 interface Notification {
@@ -191,8 +191,8 @@ export default function App() {
         );
       case 'leaderboard':
         return <Leaderboard />;
-      case 'statistics':
-        return <Statistics />;
+      case 'admin':
+        return currentUser?.role === 'admin' ? <AdminDashboard /> : null;
       case 'profile':
         return (
           <UserProfile 
@@ -201,6 +201,7 @@ export default function App() {
             userReservations={myReservations}
             loading={userLoading}
             onLogout={handleLogout}
+            onAdminDashboard={currentUser?.role === 'admin' ? () => setActiveTab('admin') : undefined}
           />
         );
       default:

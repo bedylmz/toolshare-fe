@@ -8,6 +8,7 @@ export interface User {
   avg_scr: number;
   rev_cnt: number;
   created_at: string;
+  role?: string;
 }
 
 export interface UserCreate {
