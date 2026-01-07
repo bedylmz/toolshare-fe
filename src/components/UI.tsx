@@ -1,6 +1,6 @@
 // src/components/UI.tsx
 import React, { ReactNode } from 'react';
-import { Wrench, ChevronRight, Home, Calendar, PlusCircle, MapPin, User } from 'lucide-react';
+import { Wrench, ChevronRight, Home, Calendar, PlusCircle, MapPin, User, Trophy, BarChart3 } from 'lucide-react';
 
 // Header Props - masaüstü navigasyon için
 interface HeaderProps {
@@ -13,6 +13,8 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange }) => {
     { id: 'home', label: 'Vitrin', icon: Home },
     { id: 'reservations', label: 'Kiraladıklarım', icon: Calendar },
     { id: 'add', label: 'Alet Paylaş', icon: PlusCircle },
+    { id: 'leaderboard', label: 'Liderlik', icon: Trophy },
+    { id: 'statistics', label: 'İstatistikler', icon: BarChart3 },
     { id: 'profile', label: 'Profil', icon: User },
   ];
 

@@ -1,8 +1,8 @@
 // src/pages/UserProfile.tsx
-import React from 'react';
-import { Star, ShieldCheck, Clock, User as UserIcon, Wrench, Calendar, LogOut } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Star, ShieldCheck, Clock, User as UserIcon, Wrench, Calendar, LogOut, TrendingUp } from 'lucide-react';
 import { ProfileMenuItem } from '../components/UI';
-import { User, Tool, Reservation } from '../services/api';
+import { User, Tool, Reservation, analyticsApi, viewsApi, LendingPerformance, BorrowHistoryItem } from '../services/api';
 
 // Props için arayüz tanımlıyoruz
 interface UserProfileProps {
@@ -14,6 +14,33 @@ interface UserProfileProps {
 }
 
 export default function UserProfile({ user, userTools, userReservations, loading = false, onLogout }: UserProfileProps) {
+  const [borrowHistory, setBorrowHistory] = useState<BorrowHistoryItem[]>([]);
+  const [lenderPerformance, setLenderPerformance] = useState<LendingPerformance[]>([]);
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
+
+  // Analytics verilerini yükle
+  useEffect(() => {
+    if (!user) return;
+
+    const loadAnalytics = async () => {
+      setAnalyticsLoading(true);
+      try {
+        const [history, performance] = await Promise.all([
+          analyticsApi.getBorrowHistory(user.user_id, 10),
+          analyticsApi.getLenderPerformance(user.user_id, 3),
+        ]);
+        setBorrowHistory(history);
+        setLenderPerformance(performance);
+      } catch (err) {
+        console.error('Analytics yükleme hatası:', err);
+      } finally {
+        setAnalyticsLoading(false);
+      }
+    };
+
+    loadAnalytics();
+  }, [user]);
+
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center h-64 text-gray-400">
@@ -102,7 +129,69 @@ export default function UserProfile({ user, userTools, userReservations, loading
       )}
 
       {/* Son Rezervasyonlar */}
-      {userReservations.length > 0 && (
+      {borrowHistory.length > 0 && (
+        <div className="bg-white rounded-2xl shadow-sm p-4">
+          <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
+            <Calendar className="w-5 h-5 text-green-600" />
+            Kiralama Geçmişi
+          </h3>
+          <div className="space-y-2">
+            {borrowHistory.slice(0, 5).map(item => (
+              <div 
+                key={item.reservation_id}
+                className="flex items-center justify-between p-3 bg-gray-50 rounded-xl"
+              >
+                <div className="flex items-center gap-3 flex-1">
+                  <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
+                    <Calendar className="w-5 h-5 text-green-600" />
+                  </div>
+                  <div className="flex-1">
+                    <span className="font-medium text-gray-700 block">{item.tool_name}</span>
+                    <span className="text-xs text-gray-400">
+                      {new Date(item.start_t).toLocaleDateString('tr-TR')} - {new Date(item.end_t).toLocaleDateString('tr-TR')}
+                    </span>
+                  </div>
+                </div>
+                <span className={`text-xs px-2 py-1 rounded-full ${
+                  item.status === 'Aktif' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
+                }`}>
+                  {item.status}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Kiracı Performans Analitikleri */}
+      {lenderPerformance.length > 0 && (
+        <div className="bg-white rounded-2xl shadow-sm p-4">
+          <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
+            <TrendingUp className="w-5 h-5 text-purple-600" />
+            Aletlerim Performansı
+          </h3>
+          <div className="space-y-3">
+            {lenderPerformance.slice(0, 3).map(perf => (
+              <div key={perf.tool_id} className="p-3 bg-gray-50 rounded-xl">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-medium text-gray-700">{perf.tool_name}</span>
+                  <div className="flex items-center gap-1">
+                    <Star className="w-4 h-4 text-yellow-400 fill-yellow-400" />
+                    <span className="text-sm font-bold text-gray-700">{perf.avg_rating.toFixed(1)}</span>
+                  </div>
+                </div>
+                <div className="flex gap-2 text-xs">
+                  <span className="text-gray-600">Toplam Kira: <span className="font-semibold">{perf.total_lends}</span></span>
+                  <span className="text-gray-600">5⭐: <span className="font-semibold text-green-600">{perf.five_star_count}</span></span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Orijinal Rezervasyonlar (Uyumluluk için) */}
+      {userReservations.length > 0 && borrowHistory.length === 0 && (
         <div className="bg-white rounded-2xl shadow-sm p-4">
           <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
             <Calendar className="w-5 h-5 text-green-600" />
