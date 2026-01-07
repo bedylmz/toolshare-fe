@@ -1,34 +1,102 @@
 // src/App.tsx
-import React, { useState } from 'react';
-import { Home, Calendar, User as UserIcon, MapPin, PlusCircle, CheckCircle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Home, Calendar, User as UserIcon, MapPin, PlusCircle, CheckCircle, AlertCircle, LogOut } from 'lucide-react';
 
 // Bileşenleri İçe Aktarma
 import { Header, NavButton } from './components/UI';
-import Marketplace, { Tool } from './pages/Marketplace';
+import Marketplace from './pages/Marketplace';
 import AddToolForm from './pages/AddToolForm';
-import Reservations, { Reservation } from './pages/Reservations';
+import Reservations from './pages/Reservations';
 import UserProfile from './pages/UserProfile';
+import AuthPage from './pages/AuthPage';
 
-// Veriyi İçe Aktarma
-import { INITIAL_TOOLS } from './data';
+// Hook ve API'leri İçe Aktarma
+import { useTools } from './hooks/useTools';
+import { 
+  Tool, 
+  User, 
+  Reservation, 
+  ReservationCreate,
+  userApi, 
+  reservationApi 
+} from './services/api';
 
 // Sekme isimleri için bir tip tanımlıyoruz
 type Tab = 'home' | 'reservations' | 'add' | 'profile';
 
-// Bildirim yapısı için bir interfacen
+// Bildirim yapısı için interface
 interface Notification {
   message: string;
   type: 'success' | 'info' | 'error';
 }
 
+// LocalStorage key
+const AUTH_STORAGE_KEY = 'toolshare_user';
+
 export default function App() {
-  // State tanımlamaları (Generic tiplerle birlikte)
+  // Auth state - localStorage'dan başlat
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    const stored = localStorage.getItem(AUTH_STORAGE_KEY);
+    return stored !== null;
+  });
+  const [currentUser, setCurrentUser] = useState<User | null>(() => {
+    const stored = localStorage.getItem(AUTH_STORAGE_KEY);
+    return stored ? JSON.parse(stored) : null;
+  });
+
+  // useTools hook'u ile tool verilerini yönet
+  const { tools, loading: toolsLoading, error: toolsError, fetchTools } = useTools();
+  
+  // State tanımlamaları
   const [activeTab, setActiveTab] = useState<Tab>('home');
-  const [tools, setTools] = useState<Tool[]>(INITIAL_TOOLS);
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('Tümü');
   const [showNotification, setShowNotification] = useState<Notification | null>(null);
+  
+  // Kullanıcı verileri
+  const [userTools, setUserTools] = useState<Tool[]>([]);
   const [myReservations, setMyReservations] = useState<Reservation[]>([]);
+  const [userLoading, setUserLoading] = useState(false);
+
+  // Login handler
+  const handleLoginSuccess = (user: User) => {
+    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
+    setCurrentUser(user);
+    setIsAuthenticated(true);
+  };
+
+  // Logout handler
+  const handleLogout = () => {
+    localStorage.removeItem(AUTH_STORAGE_KEY);
+    setCurrentUser(null);
+    setIsAuthenticated(false);
+    setUserTools([]);
+    setMyReservations([]);
+    setActiveTab('home');
+  };
+
+  // Kullanıcı verilerini yükle (sadece giriş yapılmışsa)
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const loadUserData = async () => {
+      setUserLoading(true);
+      try {
+        const [tools, reservations] = await Promise.all([
+          userApi.getTools(currentUser.user_id),
+          userApi.getReservations(currentUser.user_id),
+        ]);
+        setUserTools(tools);
+        setMyReservations(reservations);
+      } catch (err) {
+        console.error('Kullanıcı verileri yüklenemedi:', err);
+      } finally {
+        setUserLoading(false);
+      }
+    };
+
+    loadUserData();
+  }, [currentUser]);
 
   // Bildirim Fonksiyonu
   const triggerNotification = (message: string, type: 'success' | 'info' | 'error' = 'success') => {
@@ -38,46 +106,128 @@ export default function App() {
 
   // İşlem Fonksiyonları
   const handleAddTool = (newTool: Tool) => {
-    setTools([newTool, ...tools]);
+    // Yeni alet eklendiğinde listeyi güncelle
+    fetchTools();
+    setUserTools(prev => [newTool, ...prev]);
     triggerNotification('Alet başarıyla vitrine eklendi!');
     setActiveTab('home');
   };
 
-  const handleReserve = (tool: Tool) => {
-    const reservation: Reservation = {
-      id: Date.now(),
-      tool: tool,
-      date: new Date().toLocaleDateString('tr-TR'),
-      status: 'Onay Bekliyor'
-    };
-    setMyReservations([reservation, ...myReservations]);
-    triggerNotification(`${tool.title} için talep gönderildi!`);
+  const handleReserve = async (tool: Tool, startDate: Date, endDate: Date) => {
+    if (!currentUser) return;
+    
+    try {
+      const reservationData: ReservationCreate = {
+        user_id: currentUser.user_id,
+        tool_id: tool.tool_id,
+        start_t: startDate.toISOString(),
+        end_t: endDate.toISOString(),
+      };
+
+      const newReservation = await reservationApi.create(reservationData);
+      
+      // Mevcut rezervasyonu güncelle veya yeni ekle
+      setMyReservations(prev => {
+        const existingIndex = prev.findIndex(r => r.reservation_id === newReservation.reservation_id);
+        if (existingIndex >= 0) {
+          // Mevcut rezervasyon güncellendi (uzatma)
+          const updated = [...prev];
+          updated[existingIndex] = newReservation;
+          return updated;
+        }
+        // Yeni rezervasyon
+        return [newReservation, ...prev];
+      });
+      
+      triggerNotification(`${tool.tool_name} için rezervasyon kaydedildi!`);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Rezervasyon oluşturulamadı';
+      triggerNotification(errorMessage, 'error');
+      throw err; // Modal'ın hata durumunu görebilmesi için
+    }
   };
+
+  // Rezerve edilmiş tool ID'lerini hesapla
+  const reservedToolIds = myReservations.map(r => r.tool_id);
 
   // İçerik Yönlendirme
   const renderContent = () => {
+    if (!currentUser) return null;
+    
     switch (activeTab) {
       case 'home':
         return (
           <Marketplace 
-            tools={tools} 
+            tools={tools}
+            loading={toolsLoading}
+            error={toolsError}
             searchTerm={searchTerm} 
             setSearchTerm={setSearchTerm}
             selectedCategory={selectedCategory}
             setSelectedCategory={setSelectedCategory}
             onReserve={handleReserve}
+            currentUserId={currentUser.user_id}
+            currentUserName={currentUser.user_name}
+            reservedToolIds={reservedToolIds}
           />
         );
       case 'add':
-        return <AddToolForm onAdd={handleAddTool} onCancel={() => setActiveTab('home')} />;
+        return (
+          <AddToolForm 
+            userId={currentUser.user_id}
+            onAdd={handleAddTool} 
+            onCancel={() => setActiveTab('home')} 
+          />
+        );
       case 'reservations':
-        return <Reservations reservations={myReservations} />;
+        return (
+          <Reservations 
+            reservations={myReservations}
+            loading={userLoading}
+          />
+        );
       case 'profile':
-        return <UserProfile toolsCount={tools.length} />;
+        return (
+          <UserProfile 
+            user={currentUser}
+            userTools={userTools}
+            userReservations={myReservations}
+            loading={userLoading}
+            onLogout={handleLogout}
+          />
+        );
       default:
-        return <Marketplace tools={tools} searchTerm={searchTerm} setSearchTerm={setSearchTerm} selectedCategory={selectedCategory} setSelectedCategory={setSelectedCategory} onReserve={handleReserve} />;
+        return (
+          <Marketplace 
+            tools={tools}
+            loading={toolsLoading}
+            error={toolsError}
+            searchTerm={searchTerm} 
+            setSearchTerm={setSearchTerm} 
+            selectedCategory={selectedCategory} 
+            setSelectedCategory={setSelectedCategory} 
+            onReserve={handleReserve}
+            currentUserId={currentUser.user_id}
+            currentUserName={currentUser.user_name}
+            reservedToolIds={reservedToolIds}
+          />
+        );
     }
   };
+
+  // Bildirim renkleri
+  const notificationColors = {
+    success: 'bg-gray-900 text-green-400',
+    info: 'bg-blue-900 text-blue-200',
+    error: 'bg-red-900 text-red-200',
+  };
+
+  const NotificationIcon = showNotification?.type === 'error' ? AlertCircle : CheckCircle;
+
+  // Giriş yapılmamışsa AuthPage göster
+  if (!isAuthenticated || !currentUser) {
+    return <AuthPage onLoginSuccess={handleLoginSuccess} />;
+  }
 
   return (
     <div className="flex flex-col h-screen bg-gray-50 font-sans text-gray-800">
@@ -91,8 +241,10 @@ export default function App() {
 
       {/* Bildirim Toast */}
       {showNotification && (
-        <div className="fixed top-20 left-1/2 transform -translate-x-1/2 bg-gray-900 text-white px-6 py-3 rounded-full shadow-lg z-50 flex items-center gap-2 animate-in fade-in zoom-in duration-300">
-          <CheckCircle className="w-5 h-5 text-green-400" />
+        <div className={`fixed top-20 left-1/2 transform -translate-x-1/2 ${
+          notificationColors[showNotification.type]
+        } px-6 py-3 rounded-full shadow-lg z-50 flex items-center gap-2 animate-in fade-in zoom-in duration-300`}>
+          <NotificationIcon className="w-5 h-5" />
           <span>{showNotification.message}</span>
         </div>
       )}

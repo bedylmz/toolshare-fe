@@ -1,217 +1,131 @@
 // src/pages/AddToolForm.tsx
-import React, { useState, ChangeEvent, FormEvent, useRef } from 'react';
-import { X, Upload, ImagePlus } from 'lucide-react';
-import { CATEGORIES } from '../data';
-import { Tool } from './Marketplace'; // Marketplace'te tanımladığımız Tool interface'ini import ediyoruz
-
-// Sadece formun içindeki verileri temsil eden interface
-interface FormData {
-  title: string;
-  category: string;
-  price: string; // Input'tan string olarak gelir, sonra number'a çevrilebilir
-  description: string;
-  image: string; // Base64 encoded image
-}
+import React, { useState, ChangeEvent, FormEvent } from 'react';
+import { X, Wrench, AlertCircle } from 'lucide-react';
+import { Tool, ToolCreate, toolApi } from '../services/api';
 
 interface AddToolFormProps {
+  userId: number; // Aktif kullanıcı ID'si
   onAdd: (newTool: Tool) => void;
   onCancel: () => void;
 }
 
-export default function AddToolForm({ onAdd, onCancel }: AddToolFormProps) {
-  const [formData, setFormData] = useState<FormData>({
-    title: '',
-    category: 'Tadilat',
-    price: '',
-    description: '',
-    image: '',
-  });
-  const [isDragging, setIsDragging] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+export default function AddToolForm({ userId, onAdd, onCancel }: AddToolFormProps) {
+  const [toolName, setToolName] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     
-    // Tool interface'ine uygun yeni nesne oluşturuyoruz
-    const newTool: Tool = {
-      id: Date.now(),
-      title: formData.title,
-      category: formData.category,
-      price: Number(formData.price),
-      description: String(formData.description),
-      image: formData.image || "https://images.unsplash.com/photo-1581235720704-06d3acfcb36f?auto=format&fit=crop&q=80&w=800",
-      owner: "Ben",
-      ownerScore: 5.0,
-      distance: "Bende",
-      period: "günlük",
-      available: true
-    };
-    
-    onAdd(newTool);
-  };
+    if (!toolName.trim()) {
+      setError('Lütfen alet adı girin');
+      return;
+    }
 
-  // Input değişimlerini yönetmek için yardımcı fonksiyon (opsiyonel ama temiz tutar)
-  const handleChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
-  };
+    setIsSubmitting(true);
+    setError(null);
 
-  // Resim dosyasını base64'e çevir
-  const handleImageFile = (file: File) => {
-    if (file && file.type.startsWith('image/')) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setFormData(prev => ({ ...prev, image: reader.result as string }));
+    try {
+      const toolData: ToolCreate = {
+        tool_name: toolName.trim(),
+        user_id: userId,
       };
-      reader.readAsDataURL(file);
+
+      const newTool = await toolApi.create(toolData);
+      onAdd(newTool);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Alet eklenirken bir hata oluştu');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  const handleImageChange = (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) handleImageFile(file);
-  };
-
-  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setIsDragging(false);
-    const file = e.dataTransfer.files?.[0];
-    if (file) handleImageFile(file);
-  };
-
-  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setIsDragging(true);
-  };
-
-  const handleDragLeave = () => {
-    setIsDragging(false);
-  };
-
-  const removeImage = () => {
-    setFormData(prev => ({ ...prev, image: '' }));
-    if (fileInputRef.current) fileInputRef.current.value = '';
+  const handleChange = (e: ChangeEvent<HTMLInputElement>) => {
+    setToolName(e.target.value);
+    if (error) setError(null);
   };
 
   return (
     <div className="bg-white rounded-2xl shadow-sm p-6 animate-fade-in max-w-2xl mx-auto">
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-2xl font-bold text-gray-800">Alet Paylaş</h2>
-        <button onClick={onCancel} className="p-2 bg-gray-100 rounded-full hover:bg-gray-200 text-gray-600">
+        <button 
+          onClick={onCancel} 
+          className="p-2 bg-gray-100 rounded-full hover:bg-gray-200 text-gray-600 transition-colors"
+          disabled={isSubmitting}
+        >
           <X size={20} />
         </button>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-4">
-        {/* Resim Yükleme Alanı */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Alet Fotoğrafı</label>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            onChange={handleImageChange}
-            className="hidden"
-          />
-          
-          {formData.image ? (
-            <div className="relative rounded-xl overflow-hidden bg-gray-100">
-              <img 
-                src={formData.image} 
-                alt="Yüklenen resim" 
-                className="w-full h-48 object-cover"
-              />
-              <button
-                type="button"
-                onClick={removeImage}
-                className="absolute top-2 right-2 p-1.5 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors shadow-lg"
-              >
-                <X size={16} />
-              </button>
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="absolute bottom-2 right-2 px-3 py-1.5 bg-white/90 backdrop-blur-sm text-gray-700 rounded-lg text-sm font-medium hover:bg-white transition-colors shadow-lg flex items-center gap-1"
-              >
-                <Upload size={14} />
-                Değiştir
-              </button>
-            </div>
-          ) : (
-            <div
-              onClick={() => fileInputRef.current?.click()}
-              onDrop={handleDrop}
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              className={`w-full h-48 border-2 border-dashed rounded-xl flex flex-col items-center justify-center cursor-pointer transition-all ${
-                isDragging 
-                  ? 'border-blue-500 bg-blue-50' 
-                  : 'border-gray-300 bg-gray-50 hover:border-blue-400 hover:bg-gray-100'
-              }`}
-            >
-              <ImagePlus className={`w-12 h-12 mb-2 ${isDragging ? 'text-blue-500' : 'text-gray-400'}`} />
-              <p className="text-sm text-gray-600 font-medium">
-                {isDragging ? 'Bırakın...' : 'Fotoğraf yüklemek için tıklayın'}
-              </p>
-              <p className="text-xs text-gray-400 mt-1">veya sürükle & bırak</p>
-            </div>
-          )}
+      {/* Bilgi Kutusu */}
+      <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6">
+        <div className="flex items-start gap-3">
+          <Wrench className="w-5 h-5 text-blue-600 mt-0.5" />
+          <div>
+            <p className="text-sm text-blue-800 font-medium">Alet paylaşımı</p>
+            <p className="text-xs text-blue-600 mt-1">
+              Paylaştığınız aletler diğer kullanıcılar tarafından kiralanabilir.
+            </p>
+          </div>
         </div>
+      </div>
+
+      <form onSubmit={handleSubmit} className="space-y-4">
+        {/* Hata Mesajı */}
+        {error && (
+          <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-center gap-3">
+            <AlertCircle className="w-5 h-5 text-red-500" />
+            <p className="text-sm text-red-700">{error}</p>
+          </div>
+        )}
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Alet Adı</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Alet Adı <span className="text-red-500">*</span>
+          </label>
           <input 
             required
-            name="title"
-            className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+            name="tool_name"
+            className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
             placeholder="Örn: Bosch Darbeli Matkap"
-            value={formData.title}
+            value={toolName}
             onChange={handleChange}
+            disabled={isSubmitting}
           />
+          <p className="text-xs text-gray-400 mt-1">
+            Aletin marka ve modelini belirtmeniz önerilir.
+          </p>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Kategori</label>
-            <select 
-              name="category"
-              className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl outline-none"
-              value={formData.category}
-              onChange={handleChange}
-            >
-              {CATEGORIES.filter(c => c !== 'Tümü').map(c => (
-                <option key={c} value={c}>{c}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Günlük Ücret (₺)</label>
-            <input 
-              required
-              name="price"
-              type="number"
-              className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl outline-none"
-              placeholder="0"
-              value={formData.price}
-              onChange={handleChange}
-            />
-          </div>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Açıklama</label>
-          <textarea 
-            name="description"
-            className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl outline-none h-32 resize-none"
-            placeholder="Aletin durumu, kullanım şartları vb."
-            value={formData.description}
-            onChange={handleChange}
-          />
+        {/* Kullanıcı Bilgisi */}
+        <div className="bg-gray-50 rounded-xl p-4">
+          <p className="text-xs text-gray-500">
+            <span className="font-medium">Sahip ID:</span> {userId}
+          </p>
         </div>
 
         <div className="pt-4">
-          <button type="submit" className="w-full bg-blue-600 text-white font-bold py-4 rounded-xl hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all">
-            İlanı Yayınla
+          <button 
+            type="submit" 
+            disabled={isSubmitting || !toolName.trim()}
+            className={`w-full font-bold py-4 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 ${
+              isSubmitting || !toolName.trim()
+                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                : 'bg-blue-600 text-white hover:bg-blue-700 shadow-blue-200'
+            }`}
+          >
+            {isSubmitting ? (
+              <>
+                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                <span>Ekleniyor...</span>
+              </>
+            ) : (
+              <>
+                <Wrench className="w-5 h-5" />
+                <span>İlanı Yayınla</span>
+              </>
+            )}
           </button>
         </div>
       </form>
